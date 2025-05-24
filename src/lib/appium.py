@@ -1,6 +1,6 @@
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable as function
 
 from dotenv import load_dotenv
@@ -16,29 +16,57 @@ class Appium:
     def __init__(self):
         self.options = UiAutomator2Options()
         self.set_options()
-        self.driver = webdriver.Remote(
+
+    def start(self, running_flow: function, allowed_time: str = ""):
+        """
+        Starts the Appium server and runs the specified flow at the allowed time.
+        Args:
+            running_flow (function): The function to run after the specified time.
+            allowed_time (str): The time in HH:MM or HH:MM:SS format when the automation should run.
+        """
+
+        driver = webdriver.Remote(
             command_executor=os.getenv("APPIUM_SERVER_URL", "http://localhost:4723"),
             options=self.options
         )
 
-    def start(self, running_flow: function):
-        allowed_hours = input("What time do you want to run the script? (e.g. 8, 9, 10) PM WIB: ")
-        if allowed_hours:
-            allowed_hours = [int(h.strip()) for h in allowed_hours.split(",") if h.strip().isdigit()]
-            while True:
-                now_utc = datetime.utcnow()
-                now_wib = now_utc.replace(hour=(now_utc.hour + 7) % 24)
-                current_hour_wib = now_wib.hour
-                if current_hour_wib in allowed_hours:
-                    break
+        if not allowed_time:
+            allowed_time = input("At what time do you want to run the script? (e.g. 20:15:30) PM WIB: ")
 
-                print(f"Current WIB hour {current_hour_wib} is not in the allowed hours {allowed_hours}. Waiting for the next hour...")
-                time.sleep(60)
+        try:
+            time_parts = list(map(int, allowed_time.strip().split(":")))
+            if len(time_parts) == 2:
+                hour, minute = time_parts
+                second = 0
+            elif len(time_parts) == 3:
+                hour, minute, second = time_parts
+            else:
+                raise ValueError
+        except ValueError:
+            print(f"Invalid time format: {allowed_time}, should be HH:MM or HH:MM:SS")
+            return
 
-        running_flow(self.driver)
-        self.driver.quit()
+        while True:
+            now_utc = datetime.utcnow()
+            now_wib = now_utc + timedelta(hours=7)
+            current_hour_wib = now_wib.hour
+            current_minute_wib = now_wib.minute
+            current_second_wib = now_wib.second
+
+            if (current_hour_wib, current_minute_wib, current_second_wib) == (hour, minute, second):
+                break
+            else:
+                print(f"Current WIB time {current_hour_wib:02d}:{current_minute_wib:02d}:{current_second_wib:02d} is not {hour:02d}:{minute:02d}:{second:02d}. Waiting...")
+                time.sleep(0.2)
+
+        running_flow(driver)
+        driver.quit()
 
     def set_options(self):
+        """
+        Sets the Appium options based on environment variables or defaults.
+        """
+
         self.options.platform_name = os.getenv("ANDROID_PLATFORM_NAME") or "Android"
         self.options.automation_name = os.getenv("ANDROID_AUTOMATION_NAME") or "UiAutomator2"
         self.options.device_name = os.getenv("ANDROID_DEVICE_NAME") or "Android"
